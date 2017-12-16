@@ -3,6 +3,12 @@
 #include <string.h>
 #include <time.h>
 
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <errno.h>
+
 #define NUM_SIZE (sizeof(int))
 
 static void _str_reverse(char *s)
@@ -47,16 +53,44 @@ static void die(const char *s)
     exit(EXIT_FAILURE);
 }
 
-static FILE *xfopen(const char *filename, char *modes)
+void save(const char *file, int *buf, size_t buf_len)
 {
-    FILE *f = fopen(filename, modes);
-    if (!f) {
-        die(filename);
+    int fd = creat(file, S_IRWXO);
+    if (fd == -1) {
+        die("create");
     }
-    return f;
+    
+    int nr = write(fd, buf, buf_len);
+    if(nr == -1){
+        die("write");
+    }
+    
+    close(fd);
 }
 
 int main(int argc, char** argv)
-{    
+{
+    int fd = open("test.txt", O_RDONLY);
+    if (fd == -1) {
+        die("open");
+    }
+
+    const size_t buf_len = 2048;
+
+    ssize_t nr;
+
+    int buf[buf_len];
+    int i = 0;
+
+    char file[10];
+    
+    while ((nr = read(fd, buf, buf_len * NUM_SIZE)) != 0) {        
+        sprintf(file, "%d", i);
+        save(file, buf, nr);
+        ++i;
+    }
+
+    close(fd);
+
     return (EXIT_SUCCESS);
 }
