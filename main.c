@@ -25,7 +25,7 @@ static FILE *xfopen(const char *filename, const char *mode)
 {
     FILE * fp = fopen(filename, mode);
     if (!fp) {
-        DIE("failed to open file %s", filename);
+        DIE("failed to open file: %s\n", filename);
     }
     return fp;
 }
@@ -220,6 +220,8 @@ void ext_sort(const char *filename, long mem_nums)
 int main(int argc, char** argv)
 {
     const char *filename = "data/_in";
+    
+    xfopen(filename, "rb");
 
     long nnums = 10;
     long mem_nums = 5;
