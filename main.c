@@ -5,6 +5,7 @@
 #include <string.h>
 #include <time.h>
 #include <stdbool.h>
+#include <math.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -20,17 +21,16 @@
   perror("reason"); \
   exit(EXIT_FAILURE)
 
-
-static FILE *xfopen(const char *filename, const char *mode)
+static FILE *e_fopen(const char *fn, const char *mode)
 {
-    FILE * fp = fopen(filename, mode);
+    FILE * fp = fopen(fn, mode);
     if (!fp) {
-        DIE("failed to open file: %s\n", filename);
+        DIE("failed to open file: %s\n", fn);
     }
     return fp;
 }
 
-static void ext_str_reverse(char *s)
+static void e_str_reverse(char *s)
 {
     int i = 0;
     int j = strlen(s) - 1;
@@ -43,7 +43,7 @@ static void ext_str_reverse(char *s)
     }
 }
 
-static void ext_itoa(int n, char *s)
+static void e_itoa(int n, char *s)
 {
     int i, sign;
 
@@ -62,24 +62,24 @@ static void ext_itoa(int n, char *s)
 
     s[i] = '\0';
 
-    ext_str_reverse(s);
+    e_str_reverse(s);
 }
 
-static size_t get_file_size(const char *filename)
+static size_t e_file_size(const char *fn)
 {
-    FILE *f = xfopen(filename, "r");
+    FILE *f = e_fopen(fn, "r");
     fseek(f, 0L, SEEK_END);
     size_t size = ftell(f);
     fclose(f);
     return size;
 }
 
-static inline bool eq_file_sizes(const char *filename1, const char *filename2)
+static inline bool e_eq_file_sizes(const char *fn1, const char *fn2)
 {
-    return get_file_size(filename1) == get_file_size(filename2);
+    return e_file_size(fn1) == e_file_size(fn2);
 }
 
-int cmp_int(const void *p1, const void *p2)
+int e_cmp_int(const void *p1, const void *p2)
 {
     int v1 = *((int*) p1);
     int v2 = *((int*) p2);
@@ -92,92 +92,99 @@ int cmp_int(const void *p1, const void *p2)
     return 0;
 }
 
-void split_file(const char *filename, long mem_nums)
+void e_split_file(const char *fn, long mem_nums)
 {
-    long file_size = get_file_size(filename);
+    long fsize = e_file_size(fn);
 
-    long nnums = file_size / N;
+    long nnums = fsize / N;
 
-    FILE *f = xfopen(filename, "rb");
+    FILE *fp_r = e_fopen(fn, "rb");
 
     long n = nnums / mem_nums;
 
+    int *buf = malloc(N * mem_nums);
+
+    char *s;
+
     for (long i = 0; i < n; ++i) {
-        char s[50];
-        sprintf(s, "_%lu", i);
+        asprintf(&s, "data/_%lu", i);
 
-        int *buf = malloc(N * mem_nums);
+        memset(buf, 0, N * mem_nums);
 
-        int nr = fread(buf, N, mem_nums, f);
+        int nr = fread(buf, N, mem_nums, fp_r);
 
-        qsort(buf, nr, N, &cmp_int);
+        qsort(buf, nr, N, &e_cmp_int);
 
-        FILE *fout = xfopen(s, "wb");
+        FILE *fp_w = e_fopen(s, "wb");
 
-        fwrite(buf, N, nr, fout);
+        fwrite(buf, N, nr, fp_w);
 
-        fclose(fout);
+        fclose(fp_w);
 
-        free(buf);
+        free(s);
     }
 
-    fclose(f);
+    free(buf);
+
+    fclose(fp_r);
 }
 
-void merge_files(const char *filename1, const char *filename2, int level)
+void e_merge_files(const char *fn1, const char *fn2, int depth)
 {
-    FILE *fp1 = xfopen(filename1, "rb");
-    FILE *fp2 = xfopen(filename2, "rb");
+    FILE *fp1 = e_fopen(fn1, "rb");
+    FILE *fp2 = e_fopen(fn2, "rb");
 
-    char fname3[50];
+    char *fn3;
 
-    sprintf(fname3, "%d_%s_%s", level, filename1, filename2);
+    asprintf(&fn3, "data/%d_%s_%s", depth, fn1, fn2);
 
-    FILE *fp_res = xfopen(fname3, "wb");   
+    FILE *fp3 = e_fopen(fn3, "wb");
 
-    long pos1 = 0;
-    long pos2 = 0;
+    free(fn3);
+
+    long p1 = 0;
+    long p2 = 0;
 
     while (1) {
         int n1, n2;
 
-        fseek(fp1, pos1, SEEK_SET);
-        fseek(fp2, pos2, SEEK_SET);
+        fseek(fp1, p1, SEEK_SET);
+        fseek(fp2, p2, SEEK_SET);
 
-        int nr1 = fread(&n1, N, 1, fp1);
-        int nr2 = fread(&n2, N, 1, fp2);
+        long nr1 = fread(&n1, N, 1, fp1);
+        long nr2 = fread(&n2, N, 1, fp2);
 
         if (nr1 > 0 && nr2 > 0) {
             if (n1 > n2) {
-                fwrite(&n2, N, 1, fp_res);
-                pos2 += nr2*N;
+                fwrite(&n2, N, 1, fp3);
+                p2 += nr2*N;
             } else if (n1 < n2) {
-                fwrite(&n1, N, 1, fp_res);
-                pos1 += nr1*N;
+                fwrite(&n1, N, 1, fp3);
+                p1 += nr1*N;
             } else {
-                fwrite(&n2, N, 1, fp_res);
-                pos1 += nr1*N;
-                pos2 += nr2*N;
+                fwrite(&n2, N, 1, fp3);
+                p1 += nr1*N;
+                p2 += nr2*N;
             }
         } else if (nr1 == 0 && nr2 == 0) {
             break;
         } else if (nr1 > 0) {
-            fwrite(&n1, N, 1, fp_res);
-            pos1 += nr1*N;
+            fwrite(&n1, N, 1, fp3);
+            p1 += nr1*N;
         } else if (nr2 > 0) {
-            fwrite(&n2, N, 1, fp_res);
-            pos2 += nr2*N;
+            fwrite(&n2, N, 1, fp3);
+            p2 += nr2*N;
         }
     }
 
-    fclose(fp_res);
+    fclose(fp3);
     fclose(fp2);
     fclose(fp1);
 }
 
-void create_file(const char *filename, size_t nnums)
+void e_create_file(const char *fn, size_t nnums)
 {
-    FILE *fp = xfopen(filename, "wb");    
+    FILE *fp = e_fopen(fn, "wb");
 
     time_t t;
     srand((unsigned) time(&t));
@@ -185,18 +192,18 @@ void create_file(const char *filename, size_t nnums)
     printf("\ncreate");
 
     for (size_t i = 0; i < nnums; ++i) {
-        int num = rand();
+        int num = rand() % 1000;
         fwrite(&num, N, 1, fp);
     }
 
     fclose(fp);
 }
 
-void print_file(const char *filename)
+void e_print_file(const char *fn)
 {
-    FILE *fp = xfopen(filename, "rb");
+    FILE *fp = e_fopen(fn, "rb");
 
-    long fsize = get_file_size(filename);
+    long fsize = e_file_size(fn);
     size_t nnums = fsize / N;
 
     for (long i = 0; i < nnums; ++i) {
@@ -208,34 +215,28 @@ void print_file(const char *filename)
     fclose(fp);
 }
 
-void ext_sort(const char *filename, long mem_nums)
+void e_sort(const char *fn, long mem_nums)
 {
-    split_file(filename, mem_nums);
+    e_split_file(fn, mem_nums);
 
-    merge_files("_0", "_1", 1);
-
-    printf("success");
+    e_merge_files("data/_0", "data/_1", 1);
 }
 
 int main(int argc, char** argv)
 {
-    const char *filename = "data/_in";
-    
-    xfopen(filename, "rb");
-
     long nnums = 10;
     long mem_nums = 5;
 
-    create_file(filename, nnums);
+    const char *filename = "data/input.dat";
 
-    print_file(filename);
+    e_create_file(filename, nnums);
 
-    ext_sort(filename, mem_nums);
+    e_print_file(filename);
 
-    printf("check...");
+    e_sort(filename, mem_nums);
 
-    print_file(filename);
-    print_file("1__0__1");
+    //e_print_file(filename);
+    e_print_file("data/1__0__1");
 
     return (EXIT_SUCCESS);
 }
