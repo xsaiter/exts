@@ -21,7 +21,7 @@
   perror("reason"); \
   exit(EXIT_FAILURE)
 
-static FILE *e_fopen(const char *fn, const char *mode)
+static FILE *ext_fopen(const char *fn, const char *mode)
 {
     FILE * fp = fopen(fn, mode);
     if (!fp) {
@@ -30,7 +30,7 @@ static FILE *e_fopen(const char *fn, const char *mode)
     return fp;
 }
 
-static void e_str_reverse(char *s)
+static void ext_str_reverse(char *s)
 {
     int i = 0;
     int j = strlen(s) - 1;
@@ -43,7 +43,7 @@ static void e_str_reverse(char *s)
     }
 }
 
-static void e_itoa(int n, char *s)
+static void ext_itoa(int n, char *s)
 {
     int i, sign;
 
@@ -62,24 +62,24 @@ static void e_itoa(int n, char *s)
 
     s[i] = '\0';
 
-    e_str_reverse(s);
+    ext_str_reverse(s);
 }
 
-static size_t e_file_size(const char *fn)
+static size_t ext_file_size(const char *fn)
 {
-    FILE *f = e_fopen(fn, "r");
+    FILE *f = ext_fopen(fn, "r");
     fseek(f, 0L, SEEK_END);
     size_t size = ftell(f);
     fclose(f);
     return size;
 }
 
-static inline bool e_eq_file_sizes(const char *fn1, const char *fn2)
+static inline bool ext_eq_file_sizes(const char *fn1, const char *fn2)
 {
-    return e_file_size(fn1) == e_file_size(fn2);
+    return ext_file_size(fn1) == ext_file_size(fn2);
 }
 
-int e_cmp_int(const void *p1, const void *p2)
+int ext_cmp_int(const void *p1, const void *p2)
 {
     int v1 = *((int*) p1);
     int v2 = *((int*) p2);
@@ -92,13 +92,13 @@ int e_cmp_int(const void *p1, const void *p2)
     return 0;
 }
 
-void e_split_file(const char *fn, long mem_nums)
+void ext_split_file(const char *fn, long mem_nums)
 {
-    long fsize = e_file_size(fn);
+    long fsize = ext_file_size(fn);
 
     long nnums = fsize / N;
 
-    FILE *fp_r = e_fopen(fn, "rb");
+    FILE *fp_r = ext_fopen(fn, "rb");
 
     long n = nnums / mem_nums;
 
@@ -113,9 +113,9 @@ void e_split_file(const char *fn, long mem_nums)
 
         int nr = fread(buf, N, mem_nums, fp_r);
 
-        qsort(buf, nr, N, &e_cmp_int);
+        qsort(buf, nr, N, &ext_cmp_int);
 
-        FILE *fp_w = e_fopen(s, "wb");
+        FILE *fp_w = ext_fopen(s, "wb");
 
         fwrite(buf, N, nr, fp_w);
 
@@ -129,16 +129,16 @@ void e_split_file(const char *fn, long mem_nums)
     fclose(fp_r);
 }
 
-void e_merge_files(const char *fn1, const char *fn2, int depth)
+void ext_merge_files(const char *fn1, const char *fn2, int depth)
 {
-    FILE *fp1 = e_fopen(fn1, "rb");
-    FILE *fp2 = e_fopen(fn2, "rb");
+    FILE *fp1 = ext_fopen(fn1, "rb");
+    FILE *fp2 = ext_fopen(fn2, "rb");
 
     char *fn3;
 
     asprintf(&fn3, "data/%d_%s_%s", depth, fn1, fn2);
 
-    FILE *fp3 = e_fopen(fn3, "wb");
+    FILE *fp3 = ext_fopen(fn3, "wb");
 
     free(fn3);
 
@@ -182,9 +182,9 @@ void e_merge_files(const char *fn1, const char *fn2, int depth)
     fclose(fp1);
 }
 
-void e_create_file(const char *fn, size_t nnums)
+void ext_create_file(const char *fn, size_t nnums)
 {
-    FILE *fp = e_fopen(fn, "wb");
+    FILE *fp = ext_fopen(fn, "wb");
 
     time_t t;
     srand((unsigned) time(&t));
@@ -199,11 +199,11 @@ void e_create_file(const char *fn, size_t nnums)
     fclose(fp);
 }
 
-void e_print_file(const char *fn)
+void ext_print_file(const char *fn)
 {
-    FILE *fp = e_fopen(fn, "rb");
+    FILE *fp = ext_fopen(fn, "rb");
 
-    long fsize = e_file_size(fn);
+    long fsize = ext_file_size(fn);
     size_t nnums = fsize / N;
 
     for (long i = 0; i < nnums; ++i) {
@@ -215,11 +215,11 @@ void e_print_file(const char *fn)
     fclose(fp);
 }
 
-void e_sort(const char *fn, long mem_nums)
+void ext_sort(const char *fn, long mem_nums)
 {
-    e_split_file(fn, mem_nums);
+    ext_split_file(fn, mem_nums);
 
-    e_merge_files("data/_0", "data/_1", 1);
+    ext_merge_files("data/_0", "data/_1", 1);
 }
 
 int main(int argc, char** argv)
@@ -229,14 +229,14 @@ int main(int argc, char** argv)
 
     const char *filename = "data/input.dat";
 
-    e_create_file(filename, nnums);
+    ext_create_file(filename, nnums);
 
-    e_print_file(filename);
+    ext_print_file(filename);
 
-    e_sort(filename, mem_nums);
+    ext_sort(filename, mem_nums);
 
     //e_print_file(filename);
-    e_print_file("data/1__0__1");
+    ext_print_file("data/1__0__1");
 
     return (EXIT_SUCCESS);
 }
