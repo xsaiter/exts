@@ -12,55 +12,41 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#define NSIZE (sizeof(int))
-#define NMAX 1000
+#include "common.h"
 
-#define DIE(...)                                                               \
-  fprintf(stderr, __VA_ARGS__);                                                \
-  perror("reason");                                                            \
-  exit(EXIT_FAILURE)
+#define QSA_NUM_SIZE (sizeof(int))
 
-static void mirror_str(char *s) {
-  int i = 0;
-  int j = strlen(s) - 1;
-  while (i < j) {
-    char c = s[i];
-    s[i] = s[j];
-    s[j] = c;
-    ++i;
-    --j;
-  }
-}
+struct sort_file_cfg_s {
+  size_t mem_size;
+  char *src_file;
+  char *dest_file;
+  char *out_dir;
+};
 
-static void int_to_str(int n, char *s) {
-  int i, sign;
-  if ((sign = n) < 0) {
-    n = -n;
-  }
-  i = 0;
-  do {
-    s[i++] = n % 10 + '0';
-  } while ((n /= 10) > 0);
-  if (sign < 0) {
-    s[i++] = '-';
-  }
-  s[i] = '\0';
-  mirror_str(s);
-}
+struct make_file_cfg {
+  char *name;
+  size_t size;
+  int min_value;
+  int max_value;
+};
 
-static int cmp_int(const void *p1, const void *p2) {
-  int v1 = *((int *)p1);
-  int v2 = *((int *)p2);
-  if (v1 < v2) {
-    return -1;
-  }
-  if (v1 > v2) {
-    return 1;
-  }
-  return 0;
-}
+/* begin prototypes */
 
-static FILE *open_or_die_file(const char *name, const char *mode) {
+FILE *open_or_die_file(const char *name, const char *mode);
+size_t get_file_size(const char *name);
+bool eq_file_sizes(const char *name1, const char *name2);
+void print_file(const char *name);
+
+FILE **split_file(const char *src_file, size_t mem_size, const char *out_dir,
+                  size_t *nfiles);
+void merge_files(FILE **files, size_t nfiles, const char *dest_file);
+void sort_file(struct sort_file_cfg_s *cfg);
+
+void make_source_file(const struct make_file_cfg *cfg);
+
+/* end prototypes */
+
+FILE *open_or_die_file(const char *name, const char *mode) {
   FILE *fp = fopen(name, mode);
   if (!fp) {
     DIE("failed to open file: %s\n", name);
@@ -68,139 +54,118 @@ static FILE *open_or_die_file(const char *name, const char *mode) {
   return fp;
 }
 
-static size_t get_file_size(const char *name) {
+size_t get_file_size(const char *name) {
   FILE *fp = open_or_die_file(name, "r");
   fseek(fp, 0L, SEEK_END);
-  size_t size = ftell(fp);
+  size_t size = (size_t)ftell(fp);
   fclose(fp);
   return size;
 }
 
-static bool eq_file_sizes(const char *name1, const char *name2) {
+bool eq_file_sizes(const char *name1, const char *name2) {
   return get_file_size(name1) == get_file_size(name2);
 }
 
-static void print_file(const char *name) {
+FILE **split_file(const char *src_file, size_t mem_size, const char *out_dir,
+                  size_t *nfiles) {
+  size_t src_file_size = get_file_size(src_file);
+  size_t len = src_file_size / mem_size;
+  if (src_file_size % mem_size > 0) {
+    ++len;
+  }
+  FILE **res = qsa_malloc(len * sizeof(FILE *));
+  FILE *fp_src = open_or_die_file(src_file, "rb");
+  size_t buf_size = mem_size - mem_size % QSA_NUM_SIZE;
+  int *buf = qsa_malloc0(buf_size);
+  size_t n = 0;
+  size_t i = 0;
+  while ((n = fread(buf, 1, buf_size, fp_src)) > 0) {
+    // qsort(buf, n, QSA_NUM_SIZE, &qsa_cmp_int);
+    char *dest_name;
+    asprintf(&dest_name, "%s/%zd_%s", out_dir, i, src_file);
+    FILE *fp_dest = open_or_die_file(dest_name, "wb");
+    fwrite(buf, QSA_NUM_SIZE, n, fp_dest);
+    fseek(fp_dest, 0L, SEEK_END);
+    res[i++] = fp_dest;
+    memset(buf, 0, buf_size);
+  }
+  free(buf);
+  fclose(fp_src);
+  *nfiles = i;
+  return res;
+}
+
+void sort_file(struct sort_file_cfg_s *cfg) {
+  char *src_file = cfg->src_file;
+  size_t mem_size = cfg->mem_size;
+  char *out_dir = cfg->out_dir;
+  size_t nfiles;
+  FILE **files = split_file(src_file, mem_size, out_dir, &nfiles);
+  merge_files(files, nfiles, cfg->dest_file);
+  for (size_t i = 0; i < nfiles; ++i) {
+    fclose(files[i]);
+  }
+  free(files);
+}
+
+void merge_files(FILE **files, size_t nfiles, const char *dest_file) {
+  FILE *fp_dest = open_or_die_file(dest_file, "wb");
+  for (size_t i = 0; i < nfiles; ++i) {
+  }
+  fclose(fp_dest);
+}
+
+void make_source_file(const struct make_file_cfg *cfg) {
+  FILE *fp = open_or_die_file(cfg->name, "wb");
+  time_t t;
+  srand((unsigned)time(&t));
+  size_t nnums = cfg->size / QSA_NUM_SIZE;
+  for (size_t i = 0; i < nnums; ++i) {
+    int num = rand() % cfg->max_value;
+    fwrite(&num, QSA_NUM_SIZE, 1, fp);
+  }
+  fclose(fp);
+}
+
+void print_file(const char *name) {
   FILE *fp = open_or_die_file(name, "rb");
-  long fsize = get_file_size(name);
-  size_t nnums = fsize / NSIZE;
-  for (long i = 0; i < nnums; ++i) {
+  size_t fsize = get_file_size(name);
+  size_t nnums = fsize / QSA_NUM_SIZE;
+  for (size_t i = 0; i < nnums; ++i) {
     int n;
-    fread(&n, NSIZE, 1, fp);
+    fread(&n, QSA_NUM_SIZE, 1, fp);
     printf("\n%d", n);
   }
   fclose(fp);
 }
 
-static void merge_files(const char *name1, const char *name2) {
-  FILE *fp1 = open_or_die_file(name1, "rb");
-  FILE *fp2 = open_or_die_file(name2, "rb");
-
-  char *name3;
-  asprintf(&name3, "data/_%s_%s", name1, name2);
-  FILE *fp3 = open_or_die_file(name3, "wb");
-  free(name3);
-
-  size_t p1 = 0;
-  size_t p2 = 0;
-
-  while (1) {
-    int n1, n2;
-
-    fseek(fp1, p1, SEEK_SET);
-    fseek(fp2, p2, SEEK_SET);
-
-    size_t nr1 = fread(&n1, NSIZE, 1, fp1);
-    size_t nr2 = fread(&n2, NSIZE, 1, fp2);
-
-    if (nr1 > 0 && nr2 > 0) {
-      if (n1 > n2) {
-        fwrite(&n2, NSIZE, 1, fp3);
-        p2 += nr2 * NSIZE;
-      } else if (n1 < n2) {
-        fwrite(&n1, NSIZE, 1, fp3);
-        p1 += nr1 * NSIZE;
-      } else {
-        fwrite(&n2, NSIZE, 1, fp3);
-        p1 += nr1 * NSIZE;
-        p2 += nr2 * NSIZE;
-      }
-    } else if (nr1 == 0 && nr2 == 0) {
-      break;
-    } else if (nr1 > 0) {
-      fwrite(&n1, NSIZE, 1, fp3);
-      p1 += nr1 * NSIZE;
-    } else if (nr2 > 0) {
-      fwrite(&n2, NSIZE, 1, fp3);
-      p2 += nr2 * NSIZE;
-    }
-  }
-
-  fclose(fp3);
-  fclose(fp2);
-  fclose(fp1);
-
-  remove(name2);
-  remove(name1);
-}
-
-static size_t split_file(const char *name, size_t mem_size) {
-  size_t i = 0;
-  size_t nnums = mem_size / NSIZE;
-
-  FILE *fp_r = open_or_die_file(name, "rb");
-  int *buf = malloc(mem_size);
-  char *s;
-  size_t nr = 1;
-  do {
-    memset(buf, 0, mem_size);
-    nr = fread(buf, NSIZE, nnums, fp_r);
-    if (nr > 0) {
-      qsort(buf, nr, NSIZE, &cmp_int);
-
-      asprintf(&s, "data/out/_%lu", i++);
-      FILE *fp_w = open_or_die_file(s, "wb");
-      fwrite(buf, NSIZE, nr, fp_w);
-      fclose(fp_w);
-
-      free(s);
-    }
-  } while (nr > 0);
-
-  free(buf);
-  fclose(fp_r);
-
-  return i;
-}
-
-static void sort_file(const char *name, size_t mem_size) {
-  size_t n = split_file(name, mem_size);
-  /*for (size_t i = 0; i < n; ++i) {
-      merge_files("data/out/_0", "data/out/_1");
-  }*/
-}
-
-static void create_and_fill_file(const char *name, size_t size) {
-  FILE *fp = open_or_die_file(name, "wb");
-  time_t t;
-  srand((unsigned)time(&t));
-  size_t nnums = size / NSIZE;
-  for (size_t i = 0; i < nnums; ++i) {
-    int num = rand() % NMAX;
-    fwrite(&num, NSIZE, 1, fp);
-  }
-  fclose(fp);
-}
-
 int main(int argc, char **argv) {
-  const char *filename = "data/input.dat";
-  size_t filesize = 100 * 4;
-  size_t mem_size = 256;
+  /*struct make_file_cfg make_cfg;
+  make_cfg.name = "data.dat";
+  make_cfg.size = sizeof(int) * 100;
+  make_cfg.max_value = 100;
+  make_cfg.min_value = 0;
 
-  create_and_fill_file(filename, filesize);
-  print_file(filename);
+  make_source_file(&make_cfg);*/
 
-  sort_file(filename, mem_size);
+  PRINT("DATA");
+  print_file("data.dat");
 
-  return (EXIT_SUCCESS);
+  PRINT("0-OUT");
+  print_file("tmp/0_data.dat");
+
+  PRINT("1-OUT");
+  print_file("tmp/1_data.dat");
+
+  PRINT("END");
+
+  struct sort_file_cfg_s cfg;
+  cfg.mem_size = 256;
+  cfg.src_file = "data.dat";
+  cfg.dest_file = "out.dat";
+  cfg.out_dir = "tmp";
+
+  sort_file(&cfg);
+
+  return EXIT_SUCCESS;
 }
