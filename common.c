@@ -37,15 +37,12 @@ void qsa_flush() { fflush(stdout); }
 int qsa_cmp_int(const void *l, const void *r) {
   int lv = QSA_VPTR_TO_INT(l);
   int rv = QSA_VPTR_TO_INT(r);
-
   if (lv > rv) {
     return 1;
   }
-
   if (lv < rv) {
     return -1;
   }
-
   return 0;
 }
 
@@ -87,7 +84,7 @@ void int_to_str(int n, char *s) {
 #define QSA_RIGHT(x) (2 * (x) + 2)
 #define QSA_PARENT(x) ((x) / 2)
 
-qsa_heap_s *qsa_heap_create(int capacity, size_t elem_size, qsa_cmp_fn *cmp) {
+qsa_heap_s *qsa_heap_make(int capacity, size_t elem_size, qsa_cmp_fn *cmp) {
   qsa_heap_s *h = qsa_malloc(sizeof(qsa_heap_s));
 
   h->capacity = capacity;
@@ -127,17 +124,13 @@ static void sink(qsa_heap_s *h, int i) {
     int l = QSA_LEFT(i);
     int r = QSA_RIGHT(i);
     int x = r;
-
     if (h->cmp(h->elems[l], h->elems[r]) > 0) {
       x = l;
     }
-
     if (h->cmp(h->elems[i], h->elems[x]) > 0) {
       break;
     }
-
     swap(h, i, x);
-
     i = x;
   }
 }
@@ -158,3 +151,13 @@ void qsa_heap_pop(qsa_heap_s *h) {
 }
 
 bool qsa_heap_empty(qsa_heap_s *h) { return h->len == 0; }
+
+void qsa_heap_enq(qsa_heap_s *h, void *elem) { qsa_heap_add(h, elem); }
+
+void *qsa_heap_deq(qsa_heap_s *h) {
+  void *res = qsa_heap_top(h);
+  qsa_heap_pop(h);
+  return res;
+}
+
+void *qsa_heap_peek(qsa_heap_s *h) { return qsa_heap_top(h); }

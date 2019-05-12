@@ -63,18 +63,8 @@ void *qsa_heap_top(qsa_heap_s *h);
 void qsa_heap_pop(qsa_heap_s *h);
 bool qsa_heap_empty(qsa_heap_s *h);
 
-typedef struct qsa_pq_s {
-  int capacity;
-  int len;
-  size_t elem_size;
-  void **elems;
-  qsa_cmp_fn *cmp;
-} qsa_pq_s;
-
-qsa_pq_s qsa_pq_make(int capacity, size_t elem_size, qsa_cmp_fn *cmp);
-void qsa_pq_free(qsa_pq_s *self);
-void qsa_pq_enqueue(qsa_pq_s *self, void *elem);
-void *qsa_pq_dequeue(qsa_pq_s *self);
-void *qsa_pq_peek(qsa_pq_s *self);
+void qsa_heap_enq(qsa_heap_s *h, void *elem);
+void *qsa_heap_deq(qsa_heap_s *h);
+void *qsa_heap_peek(qsa_heap_s *h);
 
 #endif // QSA_COMMON_H
