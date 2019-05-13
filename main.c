@@ -114,8 +114,8 @@ struct feed {
 };
 
 int cmp_feed(const void *l, const void *r) {
-  struct feed *lf = (struct feed *)l;
-  struct feed *rf = (struct feed *)r;
+  const struct feed *lf = l;
+  const struct feed *rf = r;
   if (lf->num > rf->num) {
     return 1;
   }
@@ -127,25 +127,24 @@ int cmp_feed(const void *l, const void *r) {
 
 void merge_files(int *files, size_t nfiles, const char *dest_file) {
   int dest_fd = create_or_die_file(dest_file);
-  qsa_heap_s *pq = qsa_heap_make(16, sizeof(struct feed), &cmp_feed);
+  qsa_heap_s *pq = qsa_heap_make(16, sizeof(struct feed *), &cmp_feed);
   for (size_t i = 0; i < nfiles; ++i) {
-    struct feed fe;
-    fe.fd = files[i];
-    ssize_t c = read(files[i], &(fe.num), NUM_SIZE);
-    if (c != -1L) {
-      fe.has_num = true;
+    struct feed *x = qsa_malloc(sizeof(struct feed *));
+    x->fd = files[i];
+    ssize_t ret = read(files[i], &(x->num), NUM_SIZE);
+    if (ret != -1 && ret != 0) {
+      x->has_num = true;
     } else {
-      fe.has_num = false;
+      x->has_num = false;
     }
-    if (fe.has_num) {
-      qsa_heap_enq(pq, &fe);
+    if (x->has_num) {
+      qsa_heap_enq(pq, x);
     }
   }
   while (!qsa_heap_empty(pq)) {
-    struct feed *x = qsa_heap_peek(pq);
+    struct feed *x = qsa_heap_deq(pq);
     if (x != NULL) {
       write(dest_fd, &(x->num), NUM_SIZE);
-      qsa_heap_deq(pq);
       ssize_t ret = read(x->fd, &(x->num), NUM_SIZE);
       if (ret != -1 && ret != 0) {
         x->has_num = true;
