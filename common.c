@@ -1,6 +1,3 @@
-#include <stdio.h>
-#include <stdlib.h>
-
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,11 +29,11 @@ void *qsa_calloc(size_t nmemb, size_t size) {
   return p;
 }
 
-void qsa_flush() { fflush(stdout); }
+void qsa_flush(void) { fflush(stdout); }
 
 int qsa_cmp_int(const void *l, const void *r) {
-  int lv = QSA_VPTR_TO_INT(l);
-  int rv = QSA_VPTR_TO_INT(r);
+  int lv = CONST_VOID_PTR_TO_INT(l);
+  int rv = CONST_VOID_PTR_TO_INT(r);
   if (lv > rv) {
     return 1;
   }
@@ -49,8 +46,8 @@ int qsa_cmp_int(const void *l, const void *r) {
 bool qsa_eq_int(const void *l, const void *r) { return qsa_cmp_int(l, r) == 0; }
 
 static void mirror_str(char *s) {
-  int i = 0;
-  int j = strlen(s) - 1;
+  size_t i = 0;
+  size_t j = strlen(s) - 1;
   while (i < j) {
     char c = s[i];
     s[i] = s[j];
@@ -77,87 +74,96 @@ void int_to_str(int n, char *s) {
 }
 
 /*
- * HEAP
+ * PQ
  */
 
-#define QSA_LEFT(x) (2 * (x) + 1)
-#define QSA_RIGHT(x) (2 * (x) + 2)
-#define QSA_PARENT(x) ((x) / 2)
+#define PQ_LEFT(x) (2 * (x))
+#define PQ_RIGHT(x) (2 * (x) + 1)
+#define PQ_PARENT(x) ((x) / 2)
 
-qsa_heap_s *qsa_heap_make(int capacity, size_t elem_size, qsa_cmp_fn *cmp) {
-  qsa_heap_s *h = qsa_malloc(sizeof(qsa_heap_s));
-
-  h->capacity = capacity;
-  h->len = 0;
-  h->elem_size = elem_size;
-  h->elems = qsa_malloc(h->capacity * sizeof(void *));
-  for (int i = 0; i < h->capacity; ++i) {
-    h->elems[i] = qsa_malloc(h->elem_size);
+pq_s *pq_create(size_t capacity, size_t elem_size, qsa_cmp_fn *cmp) {
+  pq_s *q = qsa_malloc(sizeof(pq_s));
+  q->capacity = capacity;
+  q->size = 0;
+  q->elem_size = elem_size;
+  q->cmp = cmp;
+  q->elems = qsa_malloc(capacity * sizeof(void *));
+  for (size_t i = 0; i < capacity; ++i) {
+    q->elems[i] = qsa_malloc(elem_size);
   }
-  h->cmp = cmp;
-
-  return h;
+  return q;
 }
 
-void qsa_heap_free(qsa_heap_s *h) {
-  for (int i = 0; i < h->len; ++i) {
-    free(h->elems[i]);
+void pq_free(pq_s *q) {
+  for (size_t i = 0; i < q->size; ++i) {
+    free(q->elems[i]);
   }
-  free(h);
+  free(q);
 }
 
-inline static void swap(qsa_heap_s *h, int i, int j) {
-  void *buf = h->elems[i];
-  h->elems[i] = h->elems[j];
-  h->elems[j] = buf;
+static bool pq_eq(pq_s *q, size_t i, size_t j) {
+  return q->cmp(q->elems[i], q->elems[j]);
 }
 
-static void swim(qsa_heap_s *h, int i) {
-  while (i >= 0 && h->cmp(h->elems[i], h->elems[QSA_PARENT(i)]) > 0) {
-    swap(h, i, QSA_PARENT(i));
-    i = QSA_PARENT(i);
-  }
+static void swap(pq_s *q, size_t i, size_t j) {
+  void *t = q->elems[i];
+  q->elems[i] = q->elems[j];
+  q->elems[j] = t;
 }
 
-static void sink(qsa_heap_s *h, int i) {
-  while (QSA_LEFT(i) < h->len) {
-    int l = QSA_LEFT(i);
-    int r = QSA_RIGHT(i);
-    int x = r;
-    if (h->cmp(h->elems[l], h->elems[r]) > 0) {
-      x = l;
-    }
-    if (h->cmp(h->elems[i], h->elems[x]) > 0) {
+static void up(pq_s *q, size_t i) {
+  while (i > 1) {
+    size_t p = PQ_PARENT(i);
+    if (!pq_eq(q, p, i)) {
       break;
     }
-    swap(h, i, x);
-    i = x;
+    swap(q, i, p);
+    i = p;
   }
 }
 
-void qsa_heap_add(qsa_heap_s *h, void *elem) {
-  memcpy(h->elems[h->len++], elem, h->elem_size);
-  swim(h, h->len - 1);
+static void down(pq_s *q, size_t i) {
+  while (true) {
+    size_t l = PQ_LEFT(i);
+    if (l > q->size) {
+      break;
+    }
+    size_t r = PQ_RIGHT(i);
+    if (l < q->size && pq_eq(q, l, r)) {
+      l++;
+    }
+    if (!pq_eq(q, i, l)) {
+      break;
+    }
+    swap(q, i, l);
+    i = l;
+  }
 }
 
-void *qsa_heap_top(qsa_heap_s *h) {
-  assert(!qsa_heap_empty(h));
-  return h->elems[0];
+static void pq_add(pq_s *q, void *elem) {
+  q->size++;
+  memcpy(q->elems[q->size], elem, q->elem_size);
+  up(q, q->size);
 }
 
-void qsa_heap_pop(qsa_heap_s *h) {
-  swap(h, 0, h->len--);
-  sink(h, 0);
+static void *pq_top(pq_s *q) {
+  assert(!pq_empty(q));
+  return q->elems[1];
 }
 
-bool qsa_heap_empty(qsa_heap_s *h) { return h->len == 0; }
+static void pq_pop(pq_s *q) {
+  swap(q, 1, q->size--);
+  down(q, 1);
+}
 
-void qsa_heap_enq(qsa_heap_s *h, void *elem) { qsa_heap_add(h, elem); }
+bool pq_empty(pq_s *q) { return q->size == 0; }
 
-void *qsa_heap_deq(qsa_heap_s *h) {
-  void *res = qsa_heap_top(h);
-  qsa_heap_pop(h);
+void pq_enq(pq_s *q, void *elem) { pq_add(q, elem); }
+
+void *pq_deq(pq_s *q) {
+  void *res = pq_top(q);
+  pq_pop(q);
   return res;
 }
 
-void *qsa_heap_peek(qsa_heap_s *h) { return qsa_heap_top(h); }
+void *pq_peek(pq_s *q) { return pq_top(q); }

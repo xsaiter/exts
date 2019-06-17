@@ -16,6 +16,12 @@
 
 static const size_t NUM_SIZE = sizeof(int);
 
+struct entry {
+  int fd;
+  int num;
+  bool has_num;
+};
+
 /* begin prototypes */
 
 size_t size_of_file(int fd);
@@ -107,19 +113,13 @@ void print_file(const char *name) {
   close(fd);
 }
 
-struct feed {
-  int fd;
-  int num;
-  bool has_num;
-};
-
-int cmp_feed(const void *l, const void *r) {
-  const struct feed *lf = l;
-  const struct feed *rf = r;
-  if (lf->num > rf->num) {
+int cmp_entry(const void *l, const void *r) {
+  const struct entry *le = l;
+  const struct entry *re = r;
+  if (le->num > re->num) {
     return 1;
   }
-  if (lf->num < rf->num) {
+  if (le->num < re->num) {
     return -1;
   }
   return 0;
@@ -127,9 +127,9 @@ int cmp_feed(const void *l, const void *r) {
 
 void merge_files(int *files, size_t nfiles, const char *dest_file) {
   int dest_fd = create_or_die_file(dest_file);
-  qsa_heap_s *pq = qsa_heap_make(16, sizeof(struct feed *), &cmp_feed);
+  pq_s *pq = pq_create(64, sizeof(struct entry *), &cmp_entry);
   for (size_t i = 0; i < nfiles; ++i) {
-    struct feed *x = qsa_malloc(sizeof(struct feed *));
+    struct entry *x = qsa_malloc(sizeof(struct entry *));
     x->fd = files[i];
     ssize_t ret = read(files[i], &(x->num), NUM_SIZE);
     if (ret != -1 && ret != 0) {
@@ -138,23 +138,23 @@ void merge_files(int *files, size_t nfiles, const char *dest_file) {
       x->has_num = false;
     }
     if (x->has_num) {
-      qsa_heap_enq(pq, x);
+      pq_enq(pq, x);
     }
   }
-  while (!qsa_heap_empty(pq)) {
-    struct feed *x = qsa_heap_deq(pq);
+  while (!pq_empty(pq)) {
+    struct entry *x = pq_deq(pq);
     if (x != NULL) {
       write(dest_fd, &(x->num), NUM_SIZE);
       ssize_t ret = read(x->fd, &(x->num), NUM_SIZE);
       if (ret != -1 && ret != 0) {
         x->has_num = true;
-        qsa_heap_enq(pq, x);
+        pq_enq(pq, x);
       } else {
         x->has_num = false;
       }
     }
   }
-  qsa_heap_free(pq);
+  pq_free(pq);
   close(dest_fd);
 }
 
@@ -170,6 +170,7 @@ void sort_file(size_t mem_size, const char *src_file, const char *dest_file,
 }
 
 int main(int argc, char **argv) {
+  double xxx = (double)1000 / 36;
   /*int fd = open("data.dat", O_RDONLY);
   size_t size = get_size_of_file(fd);
   size_t tmp = size;
@@ -185,11 +186,17 @@ int main(int argc, char **argv) {
   PRINT("DATA\n");
   print_file("data2.dat");
 
-  PRINT("\nOUT");
-  print_file("tmp/0_data.dat");
+  PRINT("\nOUT_0\n");
+  print_file("tmp/0_data2.dat");
 
-  PRINT("\nOUT");
-  print_file("tmp/1_data.dat");
+  PRINT("\nOUT_1\n");
+  print_file("tmp/1_data2.dat");
+
+  PRINT("\nOUT_2\n");
+  print_file("tmp/2_data2.dat");
+
+  PRINT("\nRESULT\n");
+  print_file("res.dat");
 
   PRINT("\nEND");
 
