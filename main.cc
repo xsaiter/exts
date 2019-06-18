@@ -71,7 +71,6 @@ int open_or_die_file(const char *name, int oflag) {
 }
 
 int create_or_die_file(const char *name) {
-  // int fd = creat(name, 0644);
   int fd = open(name, O_RDWR | O_CREAT | O_TRUNC, 0644);
   if (fd == -1) {
     DIE("failed to create file: %s\n", name);
@@ -99,16 +98,7 @@ int *split_src_file(const char *src_file, size_t mem_size, const char *out_dir,
   size_t n = 0;
   size_t i = 0;
   while ((n = static_cast<size_t>(read(src_fd, buf, buf_size))) > 0) {
-    for (int i = 0; i < n / NUM_SIZE; ++i) {
-      auto tmp = buf[i];
-      auto tmp2 = tmp;
-    }
     std::sort(buf, buf + n / NUM_SIZE);
-    for (int i = 0; i < n / NUM_SIZE; ++i) {
-      auto tmp = buf[i];
-      auto tmp2 = tmp;
-    }
-    // qsort(buf, n / NUM_SIZE, NUM_SIZE, &qsa_cmp_int);
     char *dest_name;
     asprintf(&dest_name, "%s/%zd_%s", out_dir, i, src_file);
     int fp_dest = create_or_die_file(dest_name);
@@ -151,16 +141,16 @@ void merge_files(int *files, size_t nfiles, const char *dest_file) {
   int dest_fd = create_or_die_file(dest_file);
   std::priority_queue<entry_s *, std::vector<entry_s *>, entry_cmp_s> pq;
   for (size_t i = 0; i < nfiles; ++i) {
-    entry_s *x = new entry_s;
-    x->fd = files[i];
-    ssize_t ret = read(files[i], &(x->num), NUM_SIZE);
+    entry_s *e = new entry_s;
+    e->fd = files[i];
+    ssize_t ret = read(files[i], &(e->num), NUM_SIZE);
     if (ret != -1 && ret != 0) {
-      x->has_num = true;
+      e->has_num = true;
     } else {
-      x->has_num = false;
+      e->has_num = false;
     }
-    if (x->has_num) {
-      pq.push(x);
+    if (e->has_num) {
+      pq.push(e);
     }
   }
   while (!pq.empty()) {
