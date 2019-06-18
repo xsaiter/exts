@@ -1,13 +1,9 @@
-QMAKE_CC = gcc-8 -std=c11
+CONFIG += console c++1z
 
 TEMPLATE = app
 CONFIG += console
 CONFIG -= app_bundle
 CONFIG -= qt
 
-SOURCES += \
-        common.c \
-        main.c
-
-HEADERS += \
-    common.h
+SOURCES += \        
+        main.cc

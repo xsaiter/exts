@@ -1,3 +1,9 @@
+#include <algorithm>
+#include <iostream>
+#include <memory>
+#include <queue>
+#include <vector>
+
 #include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -12,17 +18,38 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include "common.h"
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdio.h>
+
+#define CONST_VOID_PTR_TO_INT(p) (*(const int *)(p))
+#define CONST_VOID_PTR_TO_LONG(p) (*(const long *)(p))
+
+#define LOG_ERR(...) fprintf(stderr, __VA_ARGS__)
+#define LOG_INFO(...) printf(__VA_ARGS__)
+
+#define PRINT(...)                                                             \
+  printf(__VA_ARGS__);                                                         \
+  fflush(stdout);
+
+#define DIE(...)                                                               \
+  fprintf(stderr, __VA_ARGS__);                                                \
+  perror("reason");                                                            \
+  exit(EXIT_FAILURE)
 
 static const size_t NUM_SIZE = sizeof(int);
 
-struct entry {
+void qsa_flush(void) { fflush(stdout); }
+
+struct entry_s {
   int fd;
   int num;
   bool has_num;
 };
 
-/* begin prototypes */
+struct entry_cmp_s {
+  bool operator()(entry_s *x, entry_s *y) { return x->num > y->num; }
+};
 
 size_t size_of_file(int fd);
 void print_file(const char *name);
@@ -34,8 +61,6 @@ void sort_file(size_t mem_size, const char *src_file, const char *dest_file,
                const char *out_dir);
 
 void create_src_file(const char *name, size_t size, int max_value);
-
-/* end prototypes */
 
 int open_or_die_file(const char *name, int oflag) {
   int fd = open(name, oflag);
@@ -57,7 +82,7 @@ int create_or_die_file(const char *name) {
 size_t size_of_file(int fd) {
   struct stat buf;
   fstat(fd, &buf);
-  return (size_t)buf.st_size;
+  return static_cast<size_t>(buf.st_size);
 }
 
 int *split_src_file(const char *src_file, size_t mem_size, const char *out_dir,
@@ -68,13 +93,22 @@ int *split_src_file(const char *src_file, size_t mem_size, const char *out_dir,
   if (src_file_size % mem_size > 0) {
     ++len;
   }
-  int *res = qsa_malloc(len * sizeof(int));
-  size_t buf_size = mem_size - mem_size % NUM_SIZE;
-  int *buf = qsa_malloc0(buf_size);
+  int *res = new int[len];
+  size_t buf_size = (mem_size - mem_size % NUM_SIZE);
+  int *buf = new int[buf_size / NUM_SIZE];
   size_t n = 0;
   size_t i = 0;
-  while ((n = read(src_fd, buf, buf_size)) > 0) {
-    qsort(buf, n / NUM_SIZE, NUM_SIZE, &qsa_cmp_int);
+  while ((n = static_cast<size_t>(read(src_fd, buf, buf_size))) > 0) {
+    for (int i = 0; i < n / NUM_SIZE; ++i) {
+      auto tmp = buf[i];
+      auto tmp2 = tmp;
+    }
+    std::sort(buf, buf + n / NUM_SIZE);
+    for (int i = 0; i < n / NUM_SIZE; ++i) {
+      auto tmp = buf[i];
+      auto tmp2 = tmp;
+    }
+    // qsort(buf, n / NUM_SIZE, NUM_SIZE, &qsa_cmp_int);
     char *dest_name;
     asprintf(&dest_name, "%s/%zd_%s", out_dir, i, src_file);
     int fp_dest = create_or_die_file(dest_name);
@@ -83,7 +117,7 @@ int *split_src_file(const char *src_file, size_t mem_size, const char *out_dir,
     res[i++] = fp_dest;
     memset(buf, 0, buf_size);
   }
-  free(buf);
+  delete[] buf;
   close(src_fd);
   *nfiles = i;
   return res;
@@ -91,7 +125,7 @@ int *split_src_file(const char *src_file, size_t mem_size, const char *out_dir,
 
 void create_src_file(const char *name, size_t size, int max_value) {
   time_t t;
-  srand((unsigned)time(&t));
+  srand(static_cast<unsigned>(time(&t)));
   size_t nnums = size / NUM_SIZE;
   int fd = create_or_die_file(name);
   for (size_t i = 0; i < nnums; ++i) {
@@ -113,23 +147,11 @@ void print_file(const char *name) {
   close(fd);
 }
 
-int cmp_entry(const void *l, const void *r) {
-  const struct entry *le = l;
-  const struct entry *re = r;
-  if (le->num > re->num) {
-    return 1;
-  }
-  if (le->num < re->num) {
-    return -1;
-  }
-  return 0;
-}
-
 void merge_files(int *files, size_t nfiles, const char *dest_file) {
   int dest_fd = create_or_die_file(dest_file);
-  pq_s *pq = pq_create(64, sizeof(struct entry *), &cmp_entry);
+  std::priority_queue<entry_s *, std::vector<entry_s *>, entry_cmp_s> pq;
   for (size_t i = 0; i < nfiles; ++i) {
-    struct entry *x = qsa_malloc(sizeof(struct entry *));
+    entry_s *x = new entry_s;
     x->fd = files[i];
     ssize_t ret = read(files[i], &(x->num), NUM_SIZE);
     if (ret != -1 && ret != 0) {
@@ -138,23 +160,23 @@ void merge_files(int *files, size_t nfiles, const char *dest_file) {
       x->has_num = false;
     }
     if (x->has_num) {
-      pq_enq(pq, x);
+      pq.push(x);
     }
   }
-  while (!pq_empty(pq)) {
-    struct entry *x = pq_deq(pq);
-    if (x != NULL) {
+  while (!pq.empty()) {
+    entry_s *x = pq.top();
+    if (x != nullptr) {
+      pq.pop();
       write(dest_fd, &(x->num), NUM_SIZE);
       ssize_t ret = read(x->fd, &(x->num), NUM_SIZE);
       if (ret != -1 && ret != 0) {
         x->has_num = true;
-        pq_enq(pq, x);
+        pq.push(x);
       } else {
         x->has_num = false;
       }
     }
   }
-  pq_free(pq);
   close(dest_fd);
 }
 
@@ -170,21 +192,21 @@ void sort_file(size_t mem_size, const char *src_file, const char *dest_file,
 }
 
 int main(int argc, char **argv) {
-  double xxx = (double)1000 / 36;
   /*int fd = open("data.dat", O_RDONLY);
   size_t size = get_size_of_file(fd);
   size_t tmp = size;
   close(fd);*/
 
-  sort_file(8, "data2.dat", "res.dat", "tmp");
+  PRINT("DATA\n");
+  print_file("data2.dat");
+  PRINT("DATA END\n");
 
   // create_src_file("data2.dat", 20, 20);
 
+  sort_file(8, "data2.dat", "res.dat", "tmp");
+
   // size_t nfiles;
   // split_src_file("data.dat", 256, "tmp", &nfiles);
-
-  PRINT("DATA\n");
-  print_file("data2.dat");
 
   PRINT("\nOUT_0\n");
   print_file("tmp/0_data2.dat");

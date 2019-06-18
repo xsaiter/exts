@@ -1,5 +1,5 @@
 *
 !.gitignore
-!*.c
-!*.h
+!*.cc
+!*.hh
 !*.pro
