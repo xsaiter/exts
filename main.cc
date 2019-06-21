@@ -1,4 +1,6 @@
 #include <algorithm>
+#include <array>
+#include <functional>
 #include <iostream>
 #include <memory>
 #include <queue>
@@ -51,17 +53,6 @@ struct entry_cmp_s {
   bool operator()(entry_s *x, entry_s *y) { return x->num > y->num; }
 };
 
-size_t size_of_file(int fd);
-void print_file(const char *name);
-
-int *split_src_file(const char *src_file, size_t mem_size, const char *out_dir,
-                    size_t *nfiles);
-void merge_files(int *files, size_t nfiles, const char *dest_file);
-void sort_file(size_t mem_size, const char *src_file, const char *dest_file,
-               const char *out_dir);
-
-void create_src_file(const char *name, size_t size, int max_value);
-
 int open_or_die_file(const char *name, int oflag) {
   int fd = open(name, oflag);
   if (fd == -1) {
@@ -84,15 +75,15 @@ size_t size_of_file(int fd) {
   return static_cast<size_t>(buf.st_size);
 }
 
-int *split_src_file(const char *src_file, size_t mem_size, const char *out_dir,
-                    size_t *nfiles) {
+std::vector<int> split_src_file(const char *src_file, size_t mem_size,
+                                const char *out_dir) {
   int src_fd = open_or_die_file(src_file, O_RDONLY);
   size_t src_file_size = size_of_file(src_fd);
   size_t len = src_file_size / mem_size;
   if (src_file_size % mem_size > 0) {
     ++len;
   }
-  int *res = new int[len];
+  std::vector<int> res(len);
   size_t buf_size = (mem_size - mem_size % NUM_SIZE);
   int *buf = new int[buf_size / NUM_SIZE];
   size_t n = 0;
@@ -109,7 +100,6 @@ int *split_src_file(const char *src_file, size_t mem_size, const char *out_dir,
   }
   delete[] buf;
   close(src_fd);
-  *nfiles = i;
   return res;
 }
 
@@ -137,9 +127,10 @@ void print_file(const char *name) {
   close(fd);
 }
 
-void merge_files(int *files, size_t nfiles, const char *dest_file) {
+void merge_files(std::vector<int> files, const char *dest_file) {
   int dest_fd = create_or_die_file(dest_file);
   std::priority_queue<entry_s *, std::vector<entry_s *>, entry_cmp_s> pq;
+  std::size_t nfiles = files.size();
   for (size_t i = 0; i < nfiles; ++i) {
     entry_s *e = new entry_s;
     e->fd = files[i];
@@ -172,13 +163,11 @@ void merge_files(int *files, size_t nfiles, const char *dest_file) {
 
 void sort_file(size_t mem_size, const char *src_file, const char *dest_file,
                const char *out_dir) {
-  size_t nfiles;
-  int *files = split_src_file(src_file, mem_size, out_dir, &nfiles);
-  merge_files(files, nfiles, dest_file);
-  for (size_t i = 0; i < nfiles; ++i) {
-    close(files[i]);
+  auto files = split_src_file(src_file, mem_size, out_dir);
+  merge_files(files, dest_file);
+  for (auto file : files) {
+    close(file);
   }
-  free(files);
 }
 
 int main(int argc, char **argv) {
