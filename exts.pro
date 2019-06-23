@@ -5,5 +5,5 @@ CONFIG += console
 CONFIG -= app_bundle
 CONFIG -= qt
 
-SOURCES += \        
-        main.cc
+SOURCES += \
+    main.cpp       
