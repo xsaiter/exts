@@ -1,44 +1,25 @@
 #include <algorithm>
-#include <array>
-#include <functional>
-#include <iostream>
-#include <memory>
+#include <cerrno>
+#include <cstdio>
+#include <cstring>
+#include <ctime>
 #include <queue>
+#include <string>
 #include <vector>
 
-#include <math.h>
-#include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <time.h>
-
-#include <errno.h>
-#include <fcntl.h>
-#include <signal.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <unistd.h>
-
-#include <stdbool.h>
-#include <stddef.h>
-#include <stdio.h>
-
 #define PRINT(...)                                                             \
-  printf(__VA_ARGS__);                                                         \
-  fflush(stdout);
+  std::printf(__VA_ARGS__);                                                    \
+  std::fflush(stdout);
 
 #define DIE(...)                                                               \
-  fprintf(stderr, __VA_ARGS__);                                                \
-  perror("reason");                                                            \
+  std::fprintf(stderr, __VA_ARGS__);                                           \
+  std::perror("reason");                                                       \
   exit(EXIT_FAILURE)
 
 static const size_t NUM_SIZE = sizeof(int);
 
-void qsa_flush(void) { fflush(stdout); }
-
 struct entry_s {
-  FILE *file;
+  FILE *fp;
   int num;
   bool has_num;
 };
@@ -48,25 +29,21 @@ struct entry_cmp_s {
 };
 
 FILE *open_or_die_file(const char *name, const char *modes) {
-  FILE *f = fopen(name, modes);
-  if (!f) {
+  FILE *fp = std::fopen(name, modes);
+  if (!fp) {
     DIE("failed to open file: %s\n", name);
   }
-  return f;
+  return fp;
 }
 
-FILE *create_or_die_file(const char *name) {
-  FILE *f = fopen(name, "w+");
-  if (!f) {
-    DIE("failed to create file: %s\n", name);
-  }
-  return f;
+inline FILE *create_or_die_file(const char *name) {
+  return open_or_die_file(name, "w+");
 }
 
-size_t size_of_file(FILE *f) {
-  fseek(f, 0L, SEEK_END);
-  auto res = static_cast<size_t>(ftell(f));
-  fseek(f, 0L, SEEK_SET);
+size_t size_of_file(FILE *fp) {
+  std::fseek(fp, 0L, SEEK_END);
+  auto res = static_cast<size_t>(std::ftell(fp));
+  std::fseek(fp, 0L, SEEK_SET);
   return res;
 }
 
@@ -79,58 +56,58 @@ std::vector<FILE *> split_file(const char *name, size_t mem_size,
     ++len;
   }
   std::vector<FILE *> res(len);
-  size_t buf_size = (mem_size - mem_size % NUM_SIZE);
+  size_t buf_size = mem_size - mem_size % NUM_SIZE;
   size_t buf_len = buf_size / NUM_SIZE;
-  int *buf = new int[buf_len];
+  std::vector<int> buf(buf_len);
   size_t n = 0;
   size_t i = 0;
-  while ((n = fread(buf, NUM_SIZE, buf_len, fp)) > 0) {
-    std::sort(buf, buf + n);
-    char *dest_name;
-    asprintf(&dest_name, "%s/%zd_%s", out_dir, i, name);
-    FILE *fp_dest = create_or_die_file(dest_name);
-    fwrite(buf, NUM_SIZE, n, fp_dest);
-    fseek(fp_dest, 0L, SEEK_SET);
+  while ((n = std::fread(&buf[0], NUM_SIZE, buf_len, fp)) > 0) {
+    std::sort(std::begin(buf), std::next(std::begin(buf), static_cast<int>(n)));
+    std::string s(out_dir);
+    s.append("/" + std::to_string(i) + "_");
+    s.append(name);
+    FILE *fp_dest = create_or_die_file(s.c_str());
+    std::fwrite(&buf[0], NUM_SIZE, n, fp_dest);
+    std::fseek(fp_dest, 0L, SEEK_SET);
     res[i++] = fp_dest;
-    memset(buf, 0, buf_size);
+    std::fill(std::begin(buf), std::end(buf), 0);
   }
-  delete[] buf;
   fclose(fp);
   return res;
 }
 
 void create_src_file(const char *name, size_t size, int max_value) {
-  time_t t;
-  srand(static_cast<unsigned>(time(&t)));
+  std::time_t t;
+  std::srand(static_cast<unsigned>(std::time(&t)));
   size_t nnums = size / NUM_SIZE;
-  FILE *fd = create_or_die_file(name);
+  FILE *fp = create_or_die_file(name);
   for (size_t i = 0; i < nnums; ++i) {
     int num = rand() % max_value;
-    fwrite(&num, NUM_SIZE, 1, fd);
+    std::fwrite(&num, NUM_SIZE, 1, fp);
   }
-  fclose(fd);
+  fclose(fp);
 }
 
 void print_file(const char *name) {
-  FILE *fd = open_or_die_file(name, "rb");
-  size_t fsize = size_of_file(fd);
+  FILE *fp = open_or_die_file(name, "rb");
+  size_t fsize = size_of_file(fp);
   size_t nnums = fsize / NUM_SIZE;
   for (size_t i = 0; i < nnums; ++i) {
     int num;
-    fread(&num, NUM_SIZE, 1, fd);
+    std::fread(&num, NUM_SIZE, 1, fp);
     printf("\n%d", num);
   }
-  fclose(fd);
+  fclose(fp);
 }
 
-void merge_files(std::vector<FILE *> files, const char *dest_file) {
-  FILE *dest_fd = create_or_die_file(dest_file);
+void merge_files(const std::vector<FILE *> &files, const char *dest_file) {
+  FILE *dest_fp = create_or_die_file(dest_file);
   std::priority_queue<entry_s *, std::vector<entry_s *>, entry_cmp_s> pq;
-  std::size_t nfiles = files.size();
+  size_t nfiles = files.size();
   for (size_t i = 0; i < nfiles; ++i) {
     entry_s *e = new entry_s;
-    e->file = files[i];
-    size_t ret = fread(&(e->num), NUM_SIZE, 1, files[i]);
+    e->fp = files[i];
+    size_t ret = std::fread(&(e->num), NUM_SIZE, 1, files[i]);
     if (ret != 0) {
       e->has_num = true;
     } else {
@@ -144,8 +121,8 @@ void merge_files(std::vector<FILE *> files, const char *dest_file) {
     entry_s *x = pq.top();
     if (x != nullptr) {
       pq.pop();
-      fwrite(&(x->num), NUM_SIZE, 1, dest_fd);
-      size_t ret = fread(&(x->num), NUM_SIZE, 1, x->file);
+      std::fwrite(&(x->num), NUM_SIZE, 1, dest_fp);
+      size_t ret = fread(&(x->num), NUM_SIZE, 1, x->fp);
       if (ret != 0) {
         x->has_num = true;
         pq.push(x);
@@ -154,7 +131,7 @@ void merge_files(std::vector<FILE *> files, const char *dest_file) {
       }
     }
   }
-  fclose(dest_fd);
+  std::fclose(dest_fp);
 }
 
 void sort_file(size_t mem_size, const char *src_file, const char *dest_file,
@@ -162,7 +139,7 @@ void sort_file(size_t mem_size, const char *src_file, const char *dest_file,
   auto files = split_file(src_file, mem_size, out_dir);
   merge_files(files, dest_file);
   for (FILE *file : files) {
-    fclose(file);
+    std::fclose(file);
   }
 }
 
