@@ -28,6 +28,20 @@ struct entry_cmp_s {
   bool operator()(entry_s *x, entry_s *y) { return x->num > y->num; }
 };
 
+class file_s {
+public:
+  file_s(const char *name, const char *modes) : fp(fopen(name, modes)) {}
+  bool ok() const { return fp != nullptr; }
+  ~file_s() {
+    if (fp) {
+      fclose(fp);
+    }
+  }
+
+private:
+  FILE *fp;
+};
+
 FILE *open_or_die_file(const char *name, const char *modes) {
   FILE *fp = std::fopen(name, modes);
   if (!fp) {
