@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstring>
 #include <ctime>
+#include <memory>
 #include <queue>
 #include <string>
 #include <vector>
@@ -25,32 +26,28 @@ struct entry_s {
 };
 
 struct entry_cmp_s {
-  bool operator()(entry_s *x, entry_s *y) { return x->num > y->num; }
+  bool operator()(entry_s *x, entry_s *y) const { return x->num > y->num; }
 };
 
-class file_s {
-public:
-  file_s(const char *name, const char *modes) : fp(fopen(name, modes)) {}
-  bool ok() const { return fp != nullptr; }
-  ~file_s() {
+struct file_deleter_s {
+  void operator()(FILE *fp) {
     if (fp) {
       fclose(fp);
     }
   }
-
-private:
-  FILE *fp;
 };
 
-FILE *open_or_die_file(const char *name, const char *modes) {
-  FILE *fp = std::fopen(name, modes);
+using file_ptr_u = std::unique_ptr<FILE, file_deleter_s>;
+
+FILE *open_or_die_file(const std::string &name, const char *modes) {
+  FILE *fp = std::fopen(name.c_str(), modes);
   if (!fp) {
-    DIE("failed to open file: %s\n", name);
+    DIE("failed to open file: %s\n", name.c_str());
   }
   return fp;
 }
 
-inline FILE *create_or_die_file(const char *name) {
+inline FILE *create_or_die_file(const std::string &name) {
   return open_or_die_file(name, "w+");
 }
 
@@ -61,10 +58,10 @@ size_t size_of_file(FILE *fp) {
   return res;
 }
 
-std::vector<FILE *> split_file(const char *name, size_t mem_size,
-                               const char *out_dir) {
-  FILE *fp = open_or_die_file(name, "rb+");
-  size_t fsize = size_of_file(fp);
+std::vector<FILE *> split_file(const std::string &name, size_t mem_size,
+                               const std::string &out_dir) {
+  file_ptr_u fp(open_or_die_file(name, "rb+"));
+  size_t fsize = size_of_file(fp.get());
   size_t len = fsize / mem_size;
   if (fsize % mem_size > 0) {
     ++len;
@@ -75,7 +72,7 @@ std::vector<FILE *> split_file(const char *name, size_t mem_size,
   std::vector<int> buf(buf_len);
   size_t n = 0;
   size_t i = 0;
-  while ((n = std::fread(&buf[0], NUM_SIZE, buf_len, fp)) > 0) {
+  while ((n = std::fread(&buf[0], NUM_SIZE, buf_len, fp.get())) > 0) {
     std::sort(std::begin(buf), std::next(std::begin(buf), static_cast<int>(n)));
     std::string s(out_dir);
     s.append("/" + std::to_string(i) + "_");
@@ -86,7 +83,6 @@ std::vector<FILE *> split_file(const char *name, size_t mem_size,
     res[i++] = fp_dest;
     std::fill(std::begin(buf), std::end(buf), 0);
   }
-  fclose(fp);
   return res;
 }
 
@@ -94,28 +90,27 @@ void create_src_file(const char *name, size_t size, int max_value) {
   std::time_t t;
   std::srand(static_cast<unsigned>(std::time(&t)));
   size_t nnums = size / NUM_SIZE;
-  FILE *fp = create_or_die_file(name);
+  file_ptr_u fp(create_or_die_file(name));
   for (size_t i = 0; i < nnums; ++i) {
     int num = rand() % max_value;
-    std::fwrite(&num, NUM_SIZE, 1, fp);
+    std::fwrite(&num, NUM_SIZE, 1, fp.get());
   }
-  fclose(fp);
 }
 
 void print_file(const char *name) {
-  FILE *fp = open_or_die_file(name, "rb");
-  size_t fsize = size_of_file(fp);
+  file_ptr_u fp(open_or_die_file(name, "rb"));
+  size_t fsize = size_of_file(fp.get());
   size_t nnums = fsize / NUM_SIZE;
   for (size_t i = 0; i < nnums; ++i) {
     int num;
-    std::fread(&num, NUM_SIZE, 1, fp);
+    std::fread(&num, NUM_SIZE, 1, fp.get());
     printf("\n%d", num);
   }
-  fclose(fp);
 }
 
-void merge_files(const std::vector<FILE *> &files, const char *dest_file) {
-  FILE *dest_fp = create_or_die_file(dest_file);
+void merge_files(const std::vector<FILE *> &files,
+                 const std::string &dest_file) {
+  file_ptr_u dest_fp(create_or_die_file(dest_file));
   std::priority_queue<entry_s *, std::vector<entry_s *>, entry_cmp_s> pq;
   size_t nfiles = files.size();
   for (size_t i = 0; i < nfiles; ++i) {
@@ -133,9 +128,9 @@ void merge_files(const std::vector<FILE *> &files, const char *dest_file) {
   }
   while (!pq.empty()) {
     entry_s *x = pq.top();
-    if (x != nullptr) {
+    if (x) {
       pq.pop();
-      std::fwrite(&(x->num), NUM_SIZE, 1, dest_fp);
+      std::fwrite(&(x->num), NUM_SIZE, 1, dest_fp.get());
       size_t ret = fread(&(x->num), NUM_SIZE, 1, x->fp);
       if (ret != 0) {
         x->has_num = true;
@@ -145,11 +140,10 @@ void merge_files(const std::vector<FILE *> &files, const char *dest_file) {
       }
     }
   }
-  std::fclose(dest_fp);
 }
 
-void sort_file(size_t mem_size, const char *src_file, const char *dest_file,
-               const char *out_dir) {
+void sort_file(size_t mem_size, const std::string &src_file,
+               const std::string &dest_file, const std::string &out_dir) {
   auto files = split_file(src_file, mem_size, out_dir);
   merge_files(files, dest_file);
   for (FILE *file : files) {
@@ -167,7 +161,7 @@ int main(int argc, char **argv) {
   print_file("data2.dat");
   PRINT("DATA END\n");
 
-  // create_src_file("data2.dat", 20, 20);
+  create_src_file("data3.dat", 20, 20);
 
   sort_file(8, "data2.dat", "res.dat", "tmp");
 
